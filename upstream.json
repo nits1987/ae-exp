@@ -1,0 +1,14 @@
+{
+  "alphaevolve": {
+    "repository": "https://github.com/Google-Cloud-AI/alphaevolve-on-googlecloud",
+    "commit": "674dd5e558e917320c251c085e47fae33e1bbcff",
+    "subdirectory": "skills",
+    "license": "Apache-2.0"
+  },
+  "makemore": {
+    "repository": "https://github.com/karpathy/makemore",
+    "commit": "988aa59e4d8fefa526d06f3b453ad116258398d4",
+    "license": "MIT",
+    "usage": "Embedding plus MLP architecture reference; project training/evaluation code is independent."
+  }
+}

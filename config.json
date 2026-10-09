@@ -1,0 +1,22 @@
+{
+  "context_length": 8,
+  "embedding_size": 32,
+  "hidden_size": 128,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "weight_decay": 0.01,
+  "search_steps": 2000,
+  "search_seeds": [3407, 42],
+  "final_steps": 5000,
+  "final_seeds": [101, 102, 103, 104, 105],
+  "split_seed": 3407,
+  "max_parameters": 200000,
+  "latency_multiplier": 2.0,
+  "cpu_threads": 2,
+  "eval_batch_size": 1024,
+  "latency_warmup": 50,
+  "latency_repeats": 300,
+  "sample_count": 1000,
+  "sample_max_length": 32,
+  "generation_model": "gemini-3.5-flash"
+}

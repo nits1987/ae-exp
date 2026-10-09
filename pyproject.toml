@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "names-poc"
+version = "0.1.0"
+description = "Reproducible CPU name-model architecture search with official AlphaEvolve"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "torch>=2.6,<3",
+  "optuna>=4,<6",
+  "filelock>=3.18",
+  "ae-cli @ git+https://github.com/Google-Cloud-AI/alphaevolve-on-googlecloud.git@674dd5e558e917320c251c085e47fae33e1bbcff#subdirectory=skills",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+names-poc = "names_poc.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["names_poc"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+cache_dir = "artifacts/pytest-cache"
