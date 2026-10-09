@@ -70,6 +70,13 @@ uv run python -m names_poc prepare --input-file ./data.txt
 uv run python -m names_poc baseline
 ```
 
+`baseline` loads `experiment/initial_program.py`, trains the starting network
+from scratch for both search seeds, saves its weights, and records the reference
+validation score. Running `initial_program.py` directly does not train a model.
+Evolution reuses the starting architecture's code and score; each candidate
+gets fresh weights and the same training allowance. No external pretrained
+checkpoint or inheritance of baseline weights is used.
+
 After configuring and testing cloud access using [steps.md](steps.md), run the
 comparison and automated search sequentially:
 

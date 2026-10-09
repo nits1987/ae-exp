@@ -118,7 +118,7 @@ resolve the project ID to its numeric project number through `gcloud`.
 An existing `.env` can override the profile; inspect it if the wrong project
 appears. Never paste authentication tokens into source files.
 
-## 3. Prepare names and train the baseline locally
+## 3. Prepare names and train initial_program.py as the baseline
 
 Use the supplied `data.txt` for this project. It contains ranked male/female
 columns; preparation combines both columns, lowercases names, removes duplicates,
@@ -144,25 +144,63 @@ instead. A missing 2025 member is an error, not a silent fallback to another yea
 Review `config.json` before the next command. Do not edit the protocol or code
 after the baseline freezes their hashes.
 
+**This is the first training run of the starting network.**
+`experiment/initial_program.py` defines the model and `build_model(config)`;
+running that file directly only defines those objects and does not train them.
+The following command loads that file and runs the fixed training/evaluation
+procedure around it:
+
 ```powershell
 uv run python -m names_poc baseline
 ```
 
-This trains two seed models from scratch and writes `artifacts/baseline.json`.
-It includes positive `score`, `validation_nll`, `latency_cap_ms`, and
-`timeout_seconds`. Baseline setup has a one-hour emergency timeout. Subsequent
+On the first run, this command:
+
+1. Builds the unchanged network from `experiment/initial_program.py`.
+2. Trains it from scratch for 2,000 updates with seed 3407, then independently
+   repeats training with seed 42 on the same training split.
+3. Measures validation NLL, parameter count, latency, and elapsed evaluation time.
+4. Saves both trained checkpoints, `seed_3407.pt` and `seed_42.pt`, in the
+   evaluation directory recorded by `artifacts/baseline.json`.
+5. Records the reference fitness `exp(-mean validation NLL)` and freezes the
+   dataset, code, and training settings for subsequent comparisons.
+
+`artifacts/baseline.json` includes positive `score`, `validation_nll`,
+`latency_cap_ms`, `timeout_seconds`, and `directory`. Repeating `baseline` with
+unchanged inputs reuses its saved result. Baseline setup has a one-hour emergency timeout. Subsequent
 evaluations use the measured timeout, with room for recording failed results.
 
 ```powershell
 $Baseline = Get-Content -Raw ./artifacts/baseline.json | ConvertFrom-Json
 ```
 
+Inspect the two trained baseline checkpoints:
+
+```powershell
+Get-ChildItem -LiteralPath $Baseline.directory -Filter "seed_*.pt"
+```
+
 ```powershell
 $TimeoutSeconds = [int]$Baseline.timeout_seconds
 ```
 
+**What evolution reuses:** AlphaEvolve starts from the original architecture's
+source code and this measured baseline score. Each proposed architecture is
+trained from scratch using the same update budget, training seeds, and batch
+sequences. Candidates do **not** inherit the baseline's trained weights. This
+is architecture search, not continued fine-tuning of one checkpoint. The saved
+weights preserve the baseline for inspection and reuse; no pretrained external
+network is loaded by the current implementation.
+
+At finalization, the original architecture and the selected alternatives are
+all trained again for 5,000 updates across five fresh seeds. The longer-trained
+finalists are therefore compared against an equally trained baseline, rather
+than against its shorter initial training run.
+
 Check the official CLI/evaluator connection. It copies the evaluator and seed
 into a temporary directory; persistent training artifacts remain in this project.
+This is a separate integration check after the baseline has been established;
+it does not replace the first baseline training command.
 
 ```powershell
 uv run ae --json program evaluate --program-dir ./experiment --evaluator ./evaluator.py --backend local --timeout $TimeoutSeconds
