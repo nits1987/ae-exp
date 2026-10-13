@@ -130,7 +130,7 @@ uv run python -m names_poc prepare --input-file ./combined_names.txt
 ```
 
 Expected for the supplied file: 2,000 entries, 1,918 unique names, 82 duplicates
-removed; 1,534 training names, 191 validation names, and 193 test names. Rerunning
+removed; 1,534 training names, 191 validation names, and 193 test names and also the new lines. Rerunning
 the same command verifies the prepared data. Do not switch sources afterward.
 
 For a **separate study** using the full SSA corpus, `prepare --ssa-year 2025`
