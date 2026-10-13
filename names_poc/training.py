@@ -76,6 +76,7 @@ def train(request: dict, root: Path, directory: Path) -> dict:
     characters = read_json(root / "data/vocabulary.json")["characters"]
     cfg = dict(cfg, vocab_size=len(characters)+1)
     train_xy = encode_names(read_names(root, "train"), characters, cfg["context_length"])
+    train_eval_xy = (train_xy[0][:20480], train_xy[1][:20480])
     validation_xy = encode_names(read_names(root, "validation"), characters, cfg["context_length"])
     rows = []
     for seed in request["seeds"]:
@@ -99,20 +100,32 @@ def train(request: dict, root: Path, directory: Path) -> dict:
                 raise ValueError("Nonfinite gradients")
             optimizer.step()
         train_seconds = time.perf_counter() - started
+        tr_nll = nll(model, train_eval_xy, cfg["vocab_size"], cfg["eval_batch_size"])
         val = nll(model, validation_xy, cfg["vocab_size"], cfg["eval_batch_size"])
         inference_ms = latency(model, cfg)
         if request.get("latency_cap_ms") is not None and inference_ms > request["latency_cap_ms"]:
-            raise ValueError(f"Inference p95 {inference_ms:.4f}ms exceeds {request['latency_cap_ms']:.4f}ms")
+            raise ValueError(
+                f"Inference p95 {inference_ms:.4f}ms exceeds {request['latency_cap_ms']:.4f}ms "
+                f"(achieved val_NLL={val:.4f}, train_NLL={tr_nll:.4f}, overfit_gap={val-tr_nll:+.4f}, params={params})"
+            )
         checkpoint = directory / f"seed_{seed}.pt"
         torch.save({"state_dict": model.state_dict(), "config": cfg, "characters": characters,
                     "seed": seed, "steps": request["steps"]}, checkpoint)
-        rows.append({"seed": seed, "validation_nll": val, "parameters": params,
+        rows.append({"seed": seed, "train_nll": tr_nll, "validation_nll": val, "parameters": params,
                      "train_seconds": train_seconds, "inference_p95_ms": inference_ms,
                      "checkpoint": checkpoint.name})
     mean = statistics.mean(row["validation_nll"] for row in rows)
-    return {"status": "ok", "score": math.exp(-mean), "validation_nll": mean,
+    mean_train = statistics.mean(row["train_nll"] for row in rows)
+    gap = mean - mean_train
+    max_lat = max(row["inference_p95_ms"] for row in rows)
+    cap_str = f"/{request['latency_cap_ms']:.4f}ms" if request.get("latency_cap_ms") is not None else ""
+    return {"status": "ok", "score": math.exp(-mean), "validation_nll": mean, "train_nll": mean_train,
             "perplexity": math.exp(mean), "seeds": rows,
-            "insights": [{"label": "validation", "text": f"NLL={mean:.6f}; params={rows[0]['parameters']}; seeds={request['seeds']}"}]}
+            "insights": [{"label": "validation", "text": (
+                f"val_NLL={mean:.6f}; train_NLL={mean_train:.6f}; overfit_gap={gap:+.4f}; "
+                f"params={rows[0]['parameters']}/{cfg['max_parameters']}; "
+                f"latency_p95={max_lat:.4f}ms{cap_str}; seeds={request['seeds']}"
+            )}]}
 
 
 @torch.inference_mode()

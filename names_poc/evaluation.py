@@ -105,7 +105,19 @@ def baseline(root: Path) -> dict:
         if result["status"] != "ok":
             raise ValueError(f"Baseline failed: {result.get('error')}; see {result['directory']}")
         import math
-        result["latency_cap_ms"] = max(r["inference_p95_ms"] for r in result["seeds"]) * config(root)["latency_multiplier"]
+        import torch
+        cfg = config(root)
+        if torch.cuda.is_available():
+            multiplier = float(cfg.get("gpu_latency_multiplier", cfg.get("latency_multiplier", 2.0)))
+            min_cap_ms = 0.0
+            device = "cuda"
+        else:
+            multiplier = float(cfg.get("cpu_latency_multiplier", cfg.get("latency_multiplier", 10.0)))
+            min_cap_ms = float(cfg.get("cpu_min_latency_cap_ms", 0.6))
+            device = "cpu"
+        result["device"] = device
+        result["latency_multiplier"] = multiplier
+        result["latency_cap_ms"] = max(min_cap_ms, max(r["inference_p95_ms"] for r in result["seeds"]) * multiplier)
         result["timeout_seconds"] = max(180, math.ceil(result["elapsed_seconds"] * 3))
         write_json(root / "artifacts/frozen.json", fingerprint(root))
         write_json(output, result)

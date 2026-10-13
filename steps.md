@@ -120,13 +120,13 @@ appears. Never paste authentication tokens into source files.
 
 ## 3. Prepare names and train the baseline locally
 
-Use the supplied `data.txt` for this project. It contains ranked male/female
-columns; preparation combines both columns, lowercases names, removes duplicates,
-and creates deterministic 80/10/10 splits. The source is recorded as your local
-file, without assuming a publication year. This command requires no download.
+Use the combined common dataset `combined_names.txt` (which merges the supplied
+ranked male/female names in `data.txt` with Karpathy's `makemore` `names.txt`).
+Preparation lowercases names, removes duplicates, and creates deterministic
+80/10/10 splits (~29,495 unique names: 23,596 train, 2,949 validation, 2,950 test).
 
 ```powershell
-uv run python -m names_poc prepare --input-file ./data.txt
+uv run python -m names_poc prepare --input-file ./combined_names.txt
 ```
 
 Expected for the supplied file: 2,000 entries, 1,918 unique names, 82 duplicates

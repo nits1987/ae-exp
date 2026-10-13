@@ -19,7 +19,8 @@ def project(tmp_path):
     shutil.copytree(original / "experiment", root / "experiment", ignore=shutil.ignore_patterns("__pycache__"))
     cfg = read_json(root / "config.json")
     cfg.update(search_steps=3, final_steps=4, batch_size=16, latency_warmup=2,
-               latency_repeats=5, sample_count=12, latency_multiplier=1000.0)
+               latency_repeats=5, sample_count=12, latency_multiplier=1000.0,
+               cpu_latency_multiplier=1000.0, gpu_latency_multiplier=1000.0)
     write_json(root / "config.json", cfg)
     archive = root / "fixture.zip"
     # 100 unique alphabetic spellings plus duplicate and invalid rows.
