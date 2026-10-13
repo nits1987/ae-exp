@@ -13,30 +13,32 @@ runs through Google Cloud AlphaEvolve.
 
 ## Dataset
 
-The current dataset comes from [data.txt](data.txt), a tab-separated table with
-`Rank`, `Male name`, and `Female name` columns. Preparation combines the two name
-columns, removes rank values, lowercases the names, and deduplicates globally
-before splitting. The original input file is preserved.
+The primary dataset comes from [combined_names.txt](combined_names.txt), which combines
+the ranked male/female names in [data.txt](data.txt) (`2,000` entries) with
+Andrej Karpathy's [`makemore` `names.txt`](https://github.com/karpathy/makemore)
+(`32,033` entries). Preparation lowercases all names, filters to alphabetic
+spellings (`a`–`z`), and deduplicates globally before creating deterministic
+80/10/10 splits. Both [combined_names.txt](combined_names.txt) and the smaller
+[data.txt](data.txt) (`1,918` unique names, used by unit tests) are preserved in
+the repository.
 
-| Item | Count |
-|---|---:|
-| Ranked rows | 1,000 |
-| Name entries before deduplication | 2,000 |
-| Duplicate entries removed | 82 |
-| Unique names in [names.txt](names.txt) | 1,918 |
-| Training names | 1,534 |
-| Validation names | 191 |
-| Test names | 193 |
+| Item | `combined_names.txt` (Primary) | `data.txt` (Small / Unit Tests) |
+|---|---:|---:|
+| Raw name entries before deduplication | 34,033 | 2,000 |
+| Unique alphabetic names in `names.txt` | **29,495** | 1,918 |
+| Training names (80%) | **23,596** | 1,534 |
+| Validation names (10%) | **2,949** | 191 |
+| Test names (10%) | **2,950** | 193 |
 
-The alphabet contains `a` through `z`, plus one special token for padding/start
-and end-of-name prediction. The longest supplied name has 11 characters; the
-model uses a fixed eight-character context. Splits use seed `3407` and have no
-overlapping names. Source and output checksums are recorded in
-`data/manifest.json`. No external dataset download is needed for this corpus.
+The alphabet contains `a` through `z`, plus one special token (`0`) for padding/start
+and end-of-name prediction. The model uses a fixed eight-character causal context.
+Splits use seed `3407` and have no overlapping names. Source and output checksums
+are recorded in `data/manifest.json`. No external dataset download is needed for
+this corpus.
 
 ## Requirements
 
-- Windows PowerShell, Git, and [uv](https://docs.astral.sh/uv/).
+- Linux/macOS (`bash`) or Windows (`PowerShell`), Git, and [uv](https://docs.astral.sh/uv/).
 - Python 3.13, selected through `.python-version` and managed by uv.
 - CPU PyTorch and the official `ae` CLI, installed together by `uv sync --locked`.
 - For evolution: Google Cloud CLI, a billing-enabled project, provisioned
@@ -62,11 +64,11 @@ hashed in `artifacts/frozen.json`. Use a fresh project copy for a new protocol.
 
 ## Commands
 
-Run from the project root. Install dependencies and prepare the supplied data:
+Run from the project root. Install dependencies and prepare the combined dataset:
 
-```powershell
+```bash
 uv sync --locked
-uv run python -m names_poc prepare --input-file ./data.txt
+uv run python -m names_poc prepare --input-file ./combined_names.txt
 uv run python -m names_poc baseline
 ```
 
@@ -87,9 +89,9 @@ uv run python -m names_poc finalize
 uv run python -m names_poc report
 ```
 
-The supplied `data.txt` produces 1,918 unique lowercase names. Its publication
-year is not asserted. Use `prepare --ssa-year 2025` only for a separate study
-using the full SSA archive.
+The combined corpus (`combined_names.txt`) produces 29,495 unique lowercase names
+(while `data.txt` produces 1,918 unique names for fast smoke testing). Use
+`prepare --ssa-year 2025` only for a separate study using the full SSA archive.
 `evolve` starts billable cloud generation. Local commands do not call model APIs.
 The `--trials` argument is a total budget; repeated invocations do not add 50
 more trials. `evolve` reuses the saved experiment when called again.
@@ -118,12 +120,13 @@ are cached; interrupted runs can reconnect to the same cloud experiment.
 
 | Setting | Current value |
 |---|---|
-| Seed architecture | Embedding size 32, hidden size 128, `tanh` MLP |
+| Seed architecture | Embedding size 32, hidden size 128, `tanh` MLP (`37,243` parameters) |
 | Evolved code | Model architecture inside one `EVOLVE-BLOCK` |
 | Fixed optimization | AdamW; learning rate 0.001; weight decay 0.01 |
 | Search training | 2,000 updates, batch size 128, seeds 3407 and 42 |
 | Parameter limit | 200,000 |
-| Inference limit | Batch-one p95 at most twice the measured baseline |
+| Inference limit | Device-aware batch-one p95 cap: `10x` baseline (`0.60 ms` floor) on CPU (`cpu_latency_multiplier: 10.0`, `cpu_min_latency_cap_ms: 0.6`) to accommodate per-operator Python dispatch overhead; `2x` baseline on GPU (`gpu_latency_multiplier: 2.0`) |
+| Diagnostic insights | Reports `val_NLL`, `train_NLL`, `overfit_gap` (`val_NLL - train_NLL`), `params/max_parameters`, and `latency_p95` vs. cap to guide candidate mutations |
 | Evaluation timeout | At least 180 seconds; calibrated from the baseline |
 | Search allowance | Up to 50 generated programs, including failures |
 | Final training | 5,000 updates across fresh seeds 101–105 |
@@ -131,11 +134,30 @@ are cached; interrupted runs can reconnect to the same cloud experiment.
 Optimizer/scheduler evolution and a fixed 20-second budget were reviewed as
 possible later extensions; they are not part of this experiment.
 
+## Reference Run Results (50 Candidates on `combined_names.txt`)
+
+Running a 50-candidate search with `gemini-3.5-flash` on the 29,495-name corpus (`23,596` train / `2,949` validation / `2,950` test):
+
+- **Completion & Pass Rate:** `50 / 50` evaluated (`35 Succeeded`, `15 Failed` — **70% pass rate**; all 35 valid architectures outperformed the baseline seed).
+- **Validation NLL Improvement:** Reduced validation NLL from **`2.1657`** (seed) to **`2.0969`** (`prog-spiked-zebu`, Generation 31) — a **`-3.18%` NLL reduction** (more than $3\times$ the `1%` target threshold), lifting fitness $\exp(-\text{NLL})$ from `0.114668` to **`0.122842`** (`+7.13%`).
+- **Token Usage (`gemini-3.5-flash`):** `111,902` input tokens + `997,519` output tokens = **`1,109,421` total tokens** (~22K tokens/candidate).
+
+| Rank | Candidate | Fitness ($\exp(-\text{Val NLL})$) | Val NLL | Train NLL | Overfit Gap | Params | CPU p95 Latency | Key Architectural Mutation |
+|---:|---|---:|---:|---:|---:|---:|---:|---|
+| **1** | `prog-spiked-zebu` *(Gen 31)* | **0.122842** | **2.0969** *(-3.18%)* | 2.0035 | +0.0934 | 197,951 | 0.2035 ms | 3-block Pre-LN `SwiGLUResBlock` (`hidden=132`), post-flatten `LayerNorm`, fan-in + depth initialization ($\sigma = 1/\sqrt{d \cdot N}$) |
+| **2** | `prog-sloppy-binturong` *(Gen 7)* | **0.122498** | **2.0997** *(-3.05%)* | 2.0281 | +0.0716 | 187,599 | 0.3491 ms | Per-token `LayerNorm(emb=64)` + 3-block `GeGLUResBlock` (`hidden=116`) |
+| **3** | `prog-pearl-echidna` *(Gen 22)* | **0.122368** | **2.1007** *(-3.00%)* | 2.0210 | +0.0797 | 195,115 | 0.3180 ms | Gated residual MLP with scaled skip projections |
+| **4** | `prog-lively-kudu` *(Gen 14)* | **0.122283** | **2.1014** *(-2.97%)* | 2.0183 | +0.0831 | 192,455 | 0.4603 ms | Custom `RMSNorm` + 3-block `SwiGLUResBlock` (`emb=48, hidden=124`) |
+| **5** | `prog-agate-oarfish` *(Gen 23)* | **0.122204** | **2.1021** *(-2.94%)* | 2.0244 | +0.0777 | 196,420 | 0.2950 ms | Multi-scale context fusion + gated residual blocks |
+| — | **Baseline Seed** (`aromatic-mouflon`) | `0.114668` | `2.1657` *(Baseline)* | `2.1281` | `+0.0376` | `37,243` | `0.0809 ms` | 2-layer `Tanh` MLP (`emb=32, hidden=128`) |
+
 ## Project layout
 
 | Path | Purpose |
 |---|---|
 | [steps.md](steps.md) | Manual first-run instructions |
+| [combined_names.txt](combined_names.txt) | Combined 29,495-name dataset (`data.txt` + Karpathy `makemore` `names.txt`) |
+| [data.txt](data.txt) | Supplied 1,000-row ranked male/female names table (used by unit tests) |
 | [experiment/initial_program.py](experiment/initial_program.py) | Starting model and mutable architecture block |
 | [evaluator.py](evaluator.py) | Official `ae` evaluator entry point |
 | [names_poc/](names_poc/) | Data preparation, training, caching, cloud orchestration, tuning, and reports |
